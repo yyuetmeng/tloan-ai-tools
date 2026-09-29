@@ -1,4 +1,4 @@
-import { firebaseConfig, emailjsConfig } from "./firebase-config.js";
+import { firebaseConfig, emailjsConfig, catalogueApiUrl } from "./firebase-config.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
@@ -17,8 +17,21 @@ if (window.emailjs && emailjsConfig.publicKey !== "YOUR_EMAILJS_PUBLIC_KEY") {
   emailjs.init({ publicKey: emailjsConfig.publicKey });
 }
 
-// ---- Static catalogue (edit this list, or move it into a Firestore collection later) ----
+// ---- Catalogue: loaded from the Java catalogue service when configured, else this fallback list ----
 const TOOL_CATALOGUE = ["Claude Pro", "Lovable", "Figma", "Codex Pro"];
+
+async function loadToolCatalogue() {
+  if (!catalogueApiUrl) return TOOL_CATALOGUE;
+  try {
+    const res = await fetch(`${catalogueApiUrl.replace(/\/$/, "")}/api/tools?active=true`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const names = (await res.json()).map((t) => t.name);
+    return names.length ? names : TOOL_CATALOGUE;
+  } catch (err) {
+    console.warn("Catalogue service unavailable — using built-in tool list.", err);
+    return TOOL_CATALOGUE;
+  }
+}
 
 // ---- DOM refs ----
 const $ = (id) => document.getElementById(id);
@@ -94,9 +107,10 @@ async function loadApproverEmails() {
 }
 
 // ---- Requester view ----
-function populateToolOptions() {
+async function populateToolOptions() {
   const sel = $("reqTool");
-  sel.innerHTML = TOOL_CATALOGUE.map((t) => `<option>${t}</option>`).join("");
+  const tools = await loadToolCatalogue();
+  sel.innerHTML = tools.map((t) => `<option>${escapeHtml(t)}</option>`).join("");
 }
 
 $("requestForm").addEventListener("submit", async (e) => {

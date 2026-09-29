@@ -25,3 +25,7 @@ export const emailjsConfig = {
     returned: "template_returned",          // sent to requester + approver
   },
 };
+
+// Optional: URL of the deployed Java catalogue service (catalogue-service/), e.g.
+// "https://tloan-catalogue-service.onrender.com". Leave empty to use the built-in list in app.js.
+export const catalogueApiUrl = "";
