@@ -4,12 +4,15 @@
 // Access control is enforced separately by firestore.rules (see README).
 
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID",
+ 
+  
+  apiKey: "AIzaSyA5wehYgzZDo7riLk_wNcytehHxPlSWzuE", // Locate this in Project Settings > General in the Firebase Console
+  authDomain: "catalogue-f9664.firebaseapp.com",
+  projectId: "catalogue-f9664",
+  storageBucket: "catalogue-f9664.firebasestorage.app", // Or catalogue-f9664.appspot.com
+  messagingSenderId: "979407284895",
+  appId: "1:979407284895:web:56ca7f289d2d435f9c90aa", // Locate this in Project Settings under 'Your apps'
+  
 };
 
 // EmailJS is used to send the notification emails at each workflow stage,
