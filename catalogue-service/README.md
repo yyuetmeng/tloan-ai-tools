@@ -2,7 +2,7 @@
 
 A REST API plus a small browser UI for managing the T-Loan **AI Tool Catalogue**
 (the list of tools staff can request to borrow). The static T-Loan web app reads
-from it when `catalogueApiUrl` is set in `firebase-config.js`.
+from it when `catalogueApiUrl` is set in `js/firebase-config.js`.
 
 - Java 21, Spring Boot 3.5, Spring Data JPA
 - H2 in-memory database by default (seeded with Claude Pro, Lovable, Figma, Codex Pro);
@@ -75,7 +75,7 @@ host (Render, Railway, Fly.io, Google Cloud Run, Azure Container Apps) can run t
 3. Render builds `catalogue-service/Dockerfile`, generates a `CATALOGUE_ADMIN_KEY`
    (see the service's Environment tab), and gives you a URL like
    `https://tloan-catalogue-service.onrender.com`.
-4. Put that URL in `catalogueApiUrl` in `firebase-config.js` so the loan form uses the live catalogue.
+4. Put that URL in `catalogueApiUrl` in `js/firebase-config.js` so the loan form uses the live catalogue.
 
 **Docker anywhere.**
 

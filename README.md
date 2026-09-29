@@ -46,21 +46,17 @@ listing that person as the sole approver. Simplest path:
 
 If you skip this section, the app still works — it just logs a console warning instead of sending mail.
 
-## 4. Push to GitHub and deploy (5 min)
+## 4. Deploy to GitHub Pages (5 min)
 
-```bash
-cd tloan-webapp
-git init
-git add .
-git commit -m "Initial commit: T-Loan AI Tools app"
-git branch -M main
-git remote add origin https://github.com/<your-username>/<your-repo>.git
-git push -u origin main
-```
+The code is already on GitHub. One-time setup in the repo:
+**Settings → Pages → Build and deployment → Source: GitHub Actions**.
 
-Then in the GitHub repo: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-The included workflow (`.github/workflows/deploy.yml`) will run automatically on every push
-to `main` and publish the site at `https://<your-username>.github.io/<your-repo>/`.
+The included workflow (`.github/workflows/deploy.yml`) runs on every push to `main`
+(or manually from the Actions tab) and publishes the site at
+`https://<your-username>.github.io/<your-repo>/` — for this repo,
+<https://yyuetmeng.github.io/tloan-ai-tools/>.
+
+The site files are `index.html`, `css/` and `js/`; only those are published.
 
 ## 5. Test end-to-end
 
@@ -72,6 +68,6 @@ to `main` and publish the site at `https://<your-username>.github.io/<your-repo>
 ## Notes and things to harden before production use
 
 - The current build treats **any signed-in user not in the approver list as a requester** — there's no invite-only signup; anyone with the link can create an account. Add an allow-list or your organization's SSO if that matters.
-- The AI Tool Catalogue can be managed by the Java service in [`catalogue-service/`](catalogue-service/README.md) — deploy it and set `catalogueApiUrl` in `firebase-config.js`. Until then the app falls back to the hard-coded `TOOL_CATALOGUE` array in `app.js`.
+- The AI Tool Catalogue can be managed by the Java service in [`catalogue-service/`](catalogue-service/README.md) — deploy it and set `catalogueApiUrl` in `js/firebase-config.js`. Until then the app falls back to the hard-coded `TOOL_CATALOGUE` array in `js/app.js`.
 - Firestore's free (Spark) tier comfortably covers small teams; check Firebase pricing if usage grows.
 - `firestore.rules` enforces that only the approver list can approve/issue/return, and that requesters can only see their own requests — review it against your own security requirements before going live.
