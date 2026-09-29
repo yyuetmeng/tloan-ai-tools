@@ -1,0 +1,15 @@
+# Render Blueprint: deploys the Java AI Tool Catalogue service from this repo.
+# Render dashboard -> New -> Blueprint -> pick this repository.
+services:
+  - type: web
+    name: tloan-catalogue-service
+    runtime: docker
+    rootDir: catalogue-service
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /actuator/health
+    envVars:
+      - key: CATALOGUE_ADMIN_KEY
+        generateValue: true
+      - key: CATALOGUE_ALLOWED_ORIGINS
+        value: https://yyuetmeng.github.io

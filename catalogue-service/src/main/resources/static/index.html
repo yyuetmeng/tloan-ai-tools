@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Tool Catalogue</title>
+<style>
+  :root { --bg:#f6f7fb; --card:#fff; --text:#1d2330; --muted:#6b7385; --accent:#4f46e5; --border:#e3e6ee; --danger:#dc2626; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12141a; --card:#1b1e27; --text:#e8eaf0; --muted:#9aa1b2; --accent:#818cf8; --border:#2c303c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  header { padding:16px; border-bottom:1px solid var(--border); background:var(--card); font-weight:600; }
+  main { max-width:960px; margin:0 auto; padding:16px; }
+  .toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  input, select, textarea, button { font:inherit; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--card); color:var(--text); }
+  button { cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.danger { color:var(--danger); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px; }
+  .card h3 { margin:0 0 4px; }
+  .muted { color:var(--muted); font-size:14px; }
+  .tag { display:inline-block; font-size:12px; padding:2px 8px; border-radius:999px; border:1px solid var(--border); margin-right:4px; }
+  .inactive { opacity:.55; }
+  form.card { display:grid; gap:8px; margin-top:24px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  .row > * { flex:1; min-width:140px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<header>AI Tool Catalogue</header>
+<main>
+  <div class="toolbar">
+    <input id="search" placeholder="Search tools…" />
+    <select id="category"><option value="">All categories</option></select>
+    <label class="muted"><input type="checkbox" id="activeOnly" checked /> Available only</label>
+  </div>
+  <div id="list" class="grid"></div>
+
+  <form id="form" class="card">
+    <h2 id="formTitle">Add a tool</h2>
+    <p class="muted">Changes need the admin key configured on the server (CATALOGUE_ADMIN_KEY).</p>
+    <input type="hidden" id="toolId" />
+    <div class="row">
+      <input id="name" placeholder="Name" required maxlength="100" />
+      <input id="vendor" placeholder="Vendor" maxlength="100" />
+      <input id="cat" placeholder="Category" maxlength="50" />
+    </div>
+    <textarea id="description" rows="2" placeholder="Description" maxlength="1000"></textarea>
+    <div class="row">
+      <input id="websiteUrl" placeholder="https://…" type="url" />
+      <input id="totalLicences" type="number" min="0" value="1" placeholder="Licences" />
+      <label class="muted"><input type="checkbox" id="active" checked /> Available for loan</label>
+    </div>
+    <div class="row">
+      <input id="apiKey" type="password" placeholder="Admin API key" />
+      <button class="primary" type="submit">Save</button>
+      <button type="button" id="resetBtn">Clear</button>
+    </div>
+    <p id="msg" class="muted"></p>
+  </form>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+let tools = [];
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+async function load() {
+  const res = await fetch("api/tools");
+  tools = await res.json();
+  const cats = [...new Set(tools.map((t) => t.category).filter(Boolean))].sort();
+  const current = $("category").value;
+  $("category").innerHTML = `<option value="">All categories</option>` +
+    cats.map((c) => `<option ${c === current ? "selected" : ""}>${esc(c)}</option>`).join("");
+  render();
+}
+
+function render() {
+  const q = $("search").value.toLowerCase();
+  const cat = $("category").value;
+  const activeOnly = $("activeOnly").checked;
+  const shown = tools.filter((t) =>
+    (!cat || t.category === cat) && (!activeOnly || t.active) &&
+    (!q || [t.name, t.vendor, t.description].some((f) => (f || "").toLowerCase().includes(q))));
+  $("list").innerHTML = shown.map((t) => `
+    <div class="card ${t.active ? "" : "inactive"}">
+      <h3>${t.websiteUrl ? `<a href="${esc(t.websiteUrl)}" target="_blank" rel="noopener">${esc(t.name)}</a>` : esc(t.name)}</h3>
+      <div class="muted">${esc(t.vendor)}</div>
+      <p>${esc(t.description)}</p>
+      <div>${t.category ? `<span class="tag">${esc(t.category)}</span>` : ""}<span class="tag">${t.totalLicences} licence(s)</span>${t.active ? "" : `<span class="tag">Unavailable</span>`}</div>
+      <p><button type="button" data-edit="${t.id}">Edit</button> <button type="button" class="danger" data-del="${t.id}">Delete</button></p>
+    </div>`).join("") || `<p class="muted">No tools match.</p>`;
+}
+
+function resetForm() {
+  $("form").reset();
+  $("toolId").value = "";
+  $("formTitle").textContent = "Add a tool";
+}
+
+async function send(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: { "Content-Type": "application/json", "X-API-Key": $("apiKey").value },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || `Request failed (${res.status})`);
+  }
+}
+
+$("list").addEventListener("click", async (e) => {
+  const editId = e.target.dataset.edit, delId = e.target.dataset.del;
+  if (editId) {
+    const t = tools.find((x) => String(x.id) === editId);
+    $("toolId").value = t.id; $("name").value = t.name; $("vendor").value = t.vendor || "";
+    $("cat").value = t.category || ""; $("description").value = t.description || "";
+    $("websiteUrl").value = t.websiteUrl || ""; $("totalLicences").value = t.totalLicences;
+    $("active").checked = t.active; $("formTitle").textContent = `Edit ${t.name}`;
+    $("form").scrollIntoView({ behavior: "smooth" });
+  }
+  if (delId && confirm("Delete this tool from the catalogue?")) {
+    try { await send("DELETE", `api/tools/${delId}`); $("msg").textContent = "Deleted."; await load(); }
+    catch (err) { $("msg").textContent = err.message; }
+  }
+});
+
+$("form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const id = $("toolId").value;
+  const body = {
+    name: $("name").value, vendor: $("vendor").value, category: $("cat").value,
+    description: $("description").value, websiteUrl: $("websiteUrl").value,
+    totalLicences: Number($("totalLicences").value || 0), active: $("active").checked,
+  };
+  try {
+    await send(id ? "PUT" : "POST", id ? `api/tools/${id}` : "api/tools", body);
+    $("msg").textContent = "Saved.";
+    resetForm();
+    await load();
+  } catch (err) { $("msg").textContent = err.message; }
+});
+
+$("resetBtn").onclick = resetForm;
+["search", "category", "activeOnly"].forEach((id) => $(id).addEventListener("input", render));
+load();
+</script>
+</body>
+</html>

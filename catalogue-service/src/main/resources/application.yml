@@ -1,0 +1,32 @@
+server:
+  # Most PaaS hosts (Render, Railway, Heroku, Cloud Run) inject PORT.
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: catalogue-service
+  datasource:
+    # Default: in-memory H2 (data resets on restart). For persistence set
+    # SPRING_DATASOURCE_URL / SPRING_DATASOURCE_USERNAME / SPRING_DATASOURCE_PASSWORD,
+    # e.g. jdbc:postgresql://host:5432/catalogue
+    url: jdbc:h2:mem:catalogue;DB_CLOSE_DELAY=-1
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+catalogue:
+  # Shared secret required in the X-API-Key header for POST/PUT/DELETE. Empty = read-only.
+  admin-key: ${CATALOGUE_ADMIN_KEY:}
+  cors:
+    # Comma-separated, e.g. https://yyuetmeng.github.io
+    allowed-origins: ${CATALOGUE_ALLOWED_ORIGINS:*}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
