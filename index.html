@@ -10,99 +10,56 @@
 
   <header class="topbar">
     <div class="brand"><span class="dot"></span> T-Loan AI Tools</div>
-    <div id="userBox" class="user-box"></div>
+    <nav class="user-box">
+      <a id="newRequestLink" class="button primary small" target="_blank" rel="noopener">New request</a>
+      <a id="repoLink" target="_blank" rel="noopener">GitHub</a>
+    </nav>
   </header>
 
-  <main id="app" class="container">
+  <main class="container">
 
-    <!-- LOGIN VIEW -->
-    <section id="loginView" class="card hidden">
-      <h1>Sign in</h1>
-      <p class="muted">Use your work email to request or manage AI tool loans.</p>
-      <form id="loginForm">
-        <label>Email</label>
-        <input type="email" id="loginEmail" required placeholder="you@company.com" />
-        <label>Password</label>
-        <input type="password" id="loginPassword" required placeholder="••••••••" />
-        <div class="row gap">
-          <button type="submit" class="primary">Sign in</button>
-          <button type="button" id="signupBtn">Create account</button>
-        </div>
-        <p id="loginError" class="error hidden"></p>
-      </form>
+    <section class="card">
+      <h1>AI Tool Catalogue</h1>
+      <p class="muted">Tools available to borrow. Requests are made and approved on GitHub — sign in to GitHub to request one.</p>
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Search tools…" />
+        <select id="category"><option value="">All categories</option></select>
+      </div>
+      <div id="tools" class="tool-grid"><p class="muted">Loading catalogue…</p></div>
     </section>
 
-    <!-- REQUESTER VIEW -->
-    <section id="requesterView" class="hidden">
-      <div class="card">
-        <h2>New tool loan request</h2>
-        <form id="requestForm">
-          <label>Tool</label>
-          <select id="reqTool" required></select>
-          <label>Purpose</label>
-          <textarea id="reqPurpose" rows="2" required placeholder="Why do you need this tool?"></textarea>
-          <div class="row gap">
-            <div class="grow">
-              <label>Start date</label>
-              <input type="date" id="reqStart" required />
-            </div>
-            <div class="grow">
-              <label>End date</label>
-              <input type="date" id="reqEnd" required />
-            </div>
-          </div>
-          <button type="submit" class="primary">Submit request</button>
-          <p id="requestMsg" class="success hidden"></p>
-        </form>
+    <section class="card">
+      <h2>Loan requests</h2>
+      <div class="toolbar">
+        <select id="statusFilter">
+          <option value="">All statuses</option>
+        </select>
+        <input id="requesterFilter" type="search" placeholder="Filter by GitHub username…" />
       </div>
-
-      <div class="card">
-        <h2>My requests</h2>
+      <p id="requestsError" class="error hidden"></p>
+      <div class="table-wrap">
         <table class="list">
-          <thead><tr><th>Tool</th><th>Dates</th><th>Status</th><th>Notes</th></tr></thead>
-          <tbody id="myRequestsBody"></tbody>
+          <thead><tr><th>#</th><th>Requester</th><th>Tool</th><th>Dates</th><th>Status</th></tr></thead>
+          <tbody id="requestsBody"><tr><td colspan="5" class="muted">Loading requests…</td></tr></tbody>
         </table>
       </div>
     </section>
 
-    <!-- APPROVER VIEW -->
-    <section id="approverView" class="hidden">
-      <div class="card">
-        <h2>Pending approval</h2>
-        <table class="list">
-          <thead><tr><th>Requester</th><th>Tool</th><th>Dates</th><th>Purpose</th><th>Action</th></tr></thead>
-          <tbody id="pendingBody"></tbody>
-        </table>
-      </div>
-
-      <div class="card">
-        <h2>Approved — awaiting issue</h2>
-        <table class="list">
-          <thead><tr><th>Requester</th><th>Tool</th><th>Dates</th><th>Action</th></tr></thead>
-          <tbody id="approvedBody"></tbody>
-        </table>
-      </div>
-
-      <div class="card">
-        <h2>Issued — awaiting return</h2>
-        <table class="list">
-          <thead><tr><th>Requester</th><th>Tool</th><th>Issued on</th><th>Action</th></tr></thead>
-          <tbody id="issuedBody"></tbody>
-        </table>
-      </div>
-
-      <div class="card">
-        <h2>All requests</h2>
-        <table class="list">
-          <thead><tr><th>Requester</th><th>Tool</th><th>Status</th><th>Dates</th></tr></thead>
-          <tbody id="allBody"></tbody>
-        </table>
-      </div>
+    <section class="card">
+      <h2>How it works</h2>
+      <ol class="steps">
+        <li><strong>Request:</strong> click <em>Request</em> on a tool (or <em>New request</em>) and submit the GitHub form.</li>
+        <li><strong>Approve:</strong> an approver comments <code>/approve</code> or <code>/reject &lt;reason&gt;</code> on the request.</li>
+        <li><strong>Issue:</strong> once the licence is handed over, the approver comments <code>/issue</code>.</li>
+        <li><strong>Return:</strong> when it comes back, the approver comments <code>/return</code>.</li>
+      </ol>
+      <p class="muted">Everyone involved gets GitHub notifications at each step. Approvers are listed in
+        <code>catalogue/approvers.json</code>; tools are edited in <code>catalogue/tools.json</code>.</p>
     </section>
 
   </main>
 
-  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <script src="js/loan-workflow.js"></script>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

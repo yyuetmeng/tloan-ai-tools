@@ -1,39 +1,84 @@
-name: Deploy to GitHub Pages
+name: Build and deploy
 
+# Validates the catalogue with the Java builder, regenerates the loan request form,
+# and publishes the website to GitHub Pages.
 on:
   push:
     branches: ["main"]
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # to commit the regenerated issue form
   pages: write
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Test and package the catalogue builder (Java)
+        run: mvn -B -f catalogue-builder/pom.xml verify
+
+      - name: Test the loan workflow rules (JavaScript)
+        run: node --test js/loan-workflow.test.js
+
+      - name: Build catalogue data and loan request form
+        run: |
+          java -jar catalogue-builder/target/catalogue-builder.jar \
+            catalogue/tools.json \
+            _site/data/tools.json \
+            .github/ISSUE_TEMPLATE/loan-request.yml
+
+      - name: Commit the regenerated issue form
+        if: github.ref == 'refs/heads/main'
+        run: |
+          if git diff --quiet -- .github/ISSUE_TEMPLATE/loan-request.yml; then
+            echo "Issue form already up to date."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/ISSUE_TEMPLATE/loan-request.yml
+            git commit -m "Regenerate loan request form from catalogue"
+            git push
+          fi
+
+      - name: Check the issue form is up to date
+        if: github.ref != 'refs/heads/main'
+        run: |
+          git diff --exit-code -- .github/ISSUE_TEMPLATE/loan-request.yml || {
+            echo "::warning::loan-request.yml is out of date; it will be regenerated when this merges to main."
+          }
+
+      - name: Collect site files
+        run: cp -r index.html css js _site/ && rm _site/js/*.test.js
+
+      - uses: actions/configure-pages@v5
+        if: github.ref == 'refs/heads/main'
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: _site
+
   deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-      # Publish only the static site, not the Java service or repo config.
-      - name: Collect site files
-        run: |
-          mkdir _site
-          cp -r index.html css js _site/
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: "_site"
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4

@@ -1,276 +1,112 @@
-import { firebaseConfig, emailjsConfig, catalogueApiUrl } from "./firebase-config.js";
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import {
-  getAuth, onAuthStateChanged, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, signOut
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
-import {
-  getFirestore, collection, addDoc, doc, getDoc, setDoc, updateDoc,
-  onSnapshot, query, where, orderBy, serverTimestamp
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import { repository } from "./config.js";
 
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-
-if (window.emailjs && emailjsConfig.publicKey !== "YOUR_EMAILJS_PUBLIC_KEY") {
-  emailjs.init({ publicKey: emailjsConfig.publicKey });
-}
-
-// ---- Catalogue: loaded from the Java catalogue service when configured, else this fallback list ----
-const TOOL_CATALOGUE = ["Claude Pro", "Lovable", "Figma", "Codex Pro"];
-
-async function loadToolCatalogue() {
-  if (!catalogueApiUrl) return TOOL_CATALOGUE;
-  try {
-    const res = await fetch(`${catalogueApiUrl.replace(/\/$/, "")}/api/tools?active=true`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const names = (await res.json()).map((t) => t.name);
-    return names.length ? names : TOOL_CATALOGUE;
-  } catch (err) {
-    console.warn("Catalogue service unavailable — using built-in tool list.", err);
-    return TOOL_CATALOGUE;
-  }
-}
-
-// ---- DOM refs ----
+const W = window.LoanWorkflow;
 const $ = (id) => document.getElementById(id);
-const loginView = $("loginView"), requesterView = $("requesterView"), approverView = $("approverView");
-const userBox = $("userBox");
+const repo = repository || repoFromPagesUrl();
+const repoUrl = `https://github.com/${repo}`;
 
-let currentUser = null;
-let isApprover = false;
-let approverEmails = [];
+let tools = [];
+let requests = [];
 
-// ---- Auth ----
-onAuthStateChanged(auth, async (user) => {
-  currentUser = user;
-  if (!user) {
-    show(loginView); hide(requesterView); hide(approverView);
-    userBox.innerHTML = "";
-    return;
+$("repoLink").href = repoUrl;
+$("newRequestLink").href = requestUrl();
+$("statusFilter").innerHTML += W.STATUSES.map((s) => `<option>${s}</option>`).join("");
+
+["search", "category"].forEach((id) => $(id).addEventListener("input", renderTools));
+["statusFilter", "requesterFilter"].forEach((id) => $(id).addEventListener("input", renderRequests));
+
+await Promise.all([loadTools(), loadRequests()]);
+
+// ---- Data ----
+async function loadTools() {
+  // The deployed site gets data/tools.json from the Java builder; locally, fall back to the source file.
+  for (const url of ["data/tools.json", "catalogue/tools.json"]) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) { tools = await res.json(); break; }
+    } catch { /* try the next one */ }
   }
-  approverEmails = await loadApproverEmails();
-  isApprover = approverEmails.includes(user.email.toLowerCase());
+  const cats = [...new Set(tools.map((t) => t.category).filter(Boolean))].sort();
+  $("category").innerHTML += cats.map((c) => `<option>${esc(c)}</option>`).join("");
+  renderTools();
+}
 
-  userBox.innerHTML = `${user.email} <button id="logoutBtn" class="small">Sign out</button>`;
-  $("logoutBtn").onclick = () => signOut(auth);
-
-  hide(loginView);
-  if (isApprover) {
-    show(approverView); hide(requesterView);
-    watchApproverQueues();
-  } else {
-    show(requesterView); hide(approverView);
-    populateToolOptions();
-    watchMyRequests();
-  }
-});
-
-$("loginForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const email = $("loginEmail").value.trim();
-  const password = $("loginPassword").value;
+async function loadRequests() {
   try {
-    await signInWithEmailAndPassword(auth, email, password);
-    $("loginError").classList.add("hidden");
+    for (let page = 1; page <= 5; page++) {
+      const res = await fetch(`https://api.github.com/repos/${repo}/issues?labels=${W.REQUEST_LABEL}` +
+        `&state=all&per_page=100&page=${page}`, { headers: { Accept: "application/vnd.github+json" } });
+      if (!res.ok) {
+        throw new Error(res.status === 403
+          ? "GitHub's hourly limit for anonymous requests was reached — try again later."
+          : `Couldn't load requests from GitHub (HTTP ${res.status}).`);
+      }
+      const batch = (await res.json()).filter((i) => !i.pull_request);
+      requests.push(...batch);
+      if (batch.length < 100) break;
+    }
   } catch (err) {
-    $("loginError").textContent = err.message;
-    $("loginError").classList.remove("hidden");
+    $("requestsError").textContent = err.message;
+    $("requestsError").classList.remove("hidden");
   }
-});
-
-$("signupBtn").addEventListener("click", async () => {
-  const email = $("loginEmail").value.trim();
-  const password = $("loginPassword").value;
-  if (!email || !password) {
-    $("loginError").textContent = "Enter an email and password first.";
-    $("loginError").classList.remove("hidden");
-    return;
-  }
-  try {
-    await createUserWithEmailAndPassword(auth, email, password);
-  } catch (err) {
-    $("loginError").textContent = err.message;
-    $("loginError").classList.remove("hidden");
-  }
-});
-
-// ---- Settings (approver list) ----
-async function loadApproverEmails() {
-  const ref = doc(db, "settings", "approvers");
-  const snap = await getDoc(ref);
-  if (snap.exists()) return (snap.data().emails || []).map((e) => e.toLowerCase());
-  // First run: nobody configured yet, seed it with the current user as the initial approver.
-  await setDoc(ref, { emails: [currentUser.email.toLowerCase()] });
-  return [currentUser.email.toLowerCase()];
+  renderTools();     // availability depends on issued requests
+  renderRequests();
 }
 
-// ---- Requester view ----
-async function populateToolOptions() {
-  const sel = $("reqTool");
-  const tools = await loadToolCatalogue();
-  sel.innerHTML = tools.map((t) => `<option>${escapeHtml(t)}</option>`).join("");
+// ---- Rendering ----
+function renderTools() {
+  const q = $("search").value.trim().toLowerCase();
+  const cat = $("category").value;
+  const shown = tools.filter((t) => t.active !== false)
+    .filter((t) => !cat || t.category === cat)
+    .filter((t) => !q || [t.name, t.vendor, t.description, t.category].some((f) => (f || "").toLowerCase().includes(q)));
+
+  $("tools").innerHTML = shown.map((t) => {
+    const free = Math.max(0, t.totalLicences - W.countIssued(requests, t.name));
+    return `
+      <article class="tool">
+        <h3>${t.websiteUrl ? `<a href="${esc(t.websiteUrl)}" target="_blank" rel="noopener">${esc(t.name)}</a>` : esc(t.name)}</h3>
+        <div class="muted">${esc(t.vendor || "")}${t.category ? ` · ${esc(t.category)}` : ""}</div>
+        <p>${esc(t.description || "")}</p>
+        <div class="tool-foot">
+          <span class="badge ${free ? "Approved" : "Rejected"}">${free} of ${t.totalLicences} available</span>
+          <a class="button small" href="${requestUrl(t.name)}" target="_blank" rel="noopener">Request</a>
+        </div>
+      </article>`;
+  }).join("") || `<p class="muted">No tools match.</p>`;
 }
 
-$("requestForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const tool = $("reqTool").value;
-  const purpose = $("reqPurpose").value.trim();
-  const start = $("reqStart").value;
-  const end = $("reqEnd").value;
-  if (!purpose || !start || !end) return;
-  if (end < start) {
-    alert("End date must be on or after the start date.");
-    return;
-  }
+function renderRequests() {
+  const status = $("statusFilter").value;
+  const who = $("requesterFilter").value.trim().toLowerCase();
+  const rows = requests
+    .map((i) => ({ issue: i, req: W.parseIssueForm(i.body), status: W.statusFromLabels(i.labels) || "Submitted" }))
+    .filter((r) => !status || r.status === status)
+    .filter((r) => !who || r.issue.user.login.toLowerCase().includes(who));
 
-  const docRef = await addDoc(collection(db, "requests"), {
-    tool, purpose, startDate: start, endDate: end,
-    requesterEmail: currentUser.email,
-    status: "Submitted",
-    approverComments: "",
-    dateIssued: null,
-    dateReturned: null,
-    createdAt: serverTimestamp(),
-  });
-
-  sendEmail(emailjsConfig.templates.newRequest, {
-    to_email: approverEmails.join(","),
-    tool, purpose, start_date: start, end_date: end,
-    requester_email: currentUser.email,
-    request_id: docRef.id,
-  });
-
-  $("requestForm").reset();
-  $("requestMsg").textContent = "Request submitted.";
-  $("requestMsg").classList.remove("hidden");
-  setTimeout(() => $("requestMsg").classList.add("hidden"), 3000);
-});
-
-function watchMyRequests() {
-  const q = query(collection(db, "requests"), where("requesterEmail", "==", currentUser.email), orderBy("createdAt", "desc"));
-  onSnapshot(q, (snap) => {
-    const rows = snap.docs.map((d) => renderMyRow(d.id, d.data()));
-    $("myRequestsBody").innerHTML = rows.join("") || `<tr><td colspan="4" class="muted">No requests yet.</td></tr>`;
-  });
-}
-
-function renderMyRow(id, r) {
-  const notes = r.status === "Rejected" ? escapeHtml(r.approverComments || "") : "";
-  return `<tr>
-    <td>${r.tool}</td>
-    <td>${r.startDate} – ${r.endDate}</td>
-    <td><span class="badge ${r.status}">${r.status}</span></td>
-    <td class="muted">${notes}</td>
-  </tr>`;
-}
-
-// ---- Approver view ----
-function watchApproverQueues() {
-  const all = query(collection(db, "requests"), orderBy("createdAt", "desc"));
-  onSnapshot(all, (snap) => {
-    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    renderPending(items.filter((r) => r.status === "Submitted"));
-    renderApproved(items.filter((r) => r.status === "Approved"));
-    renderIssued(items.filter((r) => r.status === "Issued"));
-    renderAll(items);
-  });
-}
-
-function renderPending(items) {
-  $("pendingBody").innerHTML = items.map((r) => `
+  $("requestsBody").innerHTML = rows.map(({ issue, req, status }) => `
     <tr>
-      <td>${r.requesterEmail}</td>
-      <td>${r.tool}</td>
-      <td>${r.startDate} – ${r.endDate}</td>
-      <td>${escapeHtml(r.purpose)}</td>
-      <td>
-        <button class="small" onclick="window.__approve('${r.id}')">Approve</button>
-        <button class="small danger" onclick="window.__reject('${r.id}')">Reject</button>
-      </td>
-    </tr>`).join("") || `<tr><td colspan="5" class="muted">Nothing pending.</td></tr>`;
+      <td><a href="${esc(issue.html_url)}" target="_blank" rel="noopener">#${issue.number}</a></td>
+      <td><img class="avatar" src="${esc(issue.user.avatar_url)}&s=40" alt="" /> ${esc(issue.user.login)}</td>
+      <td>${esc(req.tool)}</td>
+      <td class="nowrap">${esc(req.startDate)} – ${esc(req.endDate)}</td>
+      <td><span class="badge ${status.replace(/\s/g, "")}">${status}</span></td>
+    </tr>`).join("") || `<tr><td colspan="5" class="muted">No requests yet.</td></tr>`;
 }
-
-function renderApproved(items) {
-  $("approvedBody").innerHTML = items.map((r) => `
-    <tr>
-      <td>${r.requesterEmail}</td><td>${r.tool}</td><td>${r.startDate} – ${r.endDate}</td>
-      <td><button class="small" onclick="window.__issue('${r.id}')">Mark issued</button></td>
-    </tr>`).join("") || `<tr><td colspan="4" class="muted">Nothing awaiting issue.</td></tr>`;
-}
-
-function renderIssued(items) {
-  $("issuedBody").innerHTML = items.map((r) => `
-    <tr>
-      <td>${r.requesterEmail}</td><td>${r.tool}</td><td>${r.dateIssued || ""}</td>
-      <td><button class="small" onclick="window.__return('${r.id}')">Mark returned</button></td>
-    </tr>`).join("") || `<tr><td colspan="4" class="muted">Nothing awaiting return.</td></tr>`;
-}
-
-function renderAll(items) {
-  $("allBody").innerHTML = items.map((r) => `
-    <tr>
-      <td>${r.requesterEmail}</td><td>${r.tool}</td>
-      <td><span class="badge ${r.status}">${r.status}</span></td>
-      <td>${r.startDate} – ${r.endDate}</td>
-    </tr>`).join("");
-}
-
-async function setStatus(id, fields) {
-  await updateDoc(doc(db, "requests", id), fields);
-}
-
-window.__approve = async (id) => {
-  const snap = await getDoc(doc(db, "requests", id));
-  const r = snap.data();
-  await setStatus(id, { status: "Approved" });
-  sendEmail(emailjsConfig.templates.decision, {
-    to_email: r.requesterEmail, tool: r.tool, decision: "Approved", comments: "",
-  });
-};
-
-window.__reject = async (id) => {
-  const comment = prompt("Reason for rejection (shown to the requester):") || "";
-  const snap = await getDoc(doc(db, "requests", id));
-  const r = snap.data();
-  await setStatus(id, { status: "Rejected", approverComments: comment });
-  sendEmail(emailjsConfig.templates.decision, {
-    to_email: r.requesterEmail, tool: r.tool, decision: "Rejected", comments: comment,
-  });
-};
-
-window.__issue = async (id) => {
-  const today = new Date().toISOString().slice(0, 10);
-  const snap = await getDoc(doc(db, "requests", id));
-  const r = snap.data();
-  await setStatus(id, { status: "Issued", dateIssued: today });
-  sendEmail(emailjsConfig.templates.issued, {
-    to_email: r.requesterEmail, tool: r.tool, issue_date: today, end_date: r.endDate,
-  });
-};
-
-window.__return = async (id) => {
-  const today = new Date().toISOString().slice(0, 10);
-  const snap = await getDoc(doc(db, "requests", id));
-  const r = snap.data();
-  await setStatus(id, { status: "Returned", dateReturned: today });
-  sendEmail(emailjsConfig.templates.returned, {
-    to_email: `${r.requesterEmail},${currentUser.email}`, tool: r.tool, return_date: today,
-  });
-};
 
 // ---- Helpers ----
-function sendEmail(templateId, params) {
-  if (!window.emailjs || emailjsConfig.publicKey === "YOUR_EMAILJS_PUBLIC_KEY") {
-    console.warn("EmailJS not configured — skipping email send.", templateId, params);
-    return;
-  }
-  emailjs.send(emailjsConfig.serviceId, templateId, params).catch((err) => console.error("Email failed:", err));
+function requestUrl(toolName) {
+  const params = new URLSearchParams({ template: "loan-request.yml", title: "Loan request" });
+  if (toolName) params.set("tool", toolName);
+  return `${repoUrl}/issues/new?${params}`;
 }
 
-function show(el) { el.classList.remove("hidden"); }
-function hide(el) { el.classList.add("hidden"); }
-function escapeHtml(s) {
+function repoFromPagesUrl() {
+  const owner = location.hostname.split(".")[0];
+  const name = location.pathname.split("/").filter(Boolean)[0] || `${owner}.github.io`;
+  return `${owner}/${name}`;
+}
+
+function esc(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

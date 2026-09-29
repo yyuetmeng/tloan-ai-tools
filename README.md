@@ -1,73 +1,97 @@
-# T-Loan AI Tools — standalone web app
+# T-Loan AI Tools
 
-A self-contained replacement for the SharePoint version: requesters submit a loan
-request for a catalogued AI tool (Claude Pro, Lovable, Figma, Codex Pro), it routes
-to an approver by email, and the approver moves it through
-Submitted → Approved/Rejected → Issued → Returned, exactly like the SharePoint design.
+Borrow licences for AI tools (Claude Pro, Lovable, Figma, Codex Pro, …) using **only GitHub** —
+no Firebase, no server, no extra accounts:
 
-No server to run — it's a static site (plain HTML/CSS/JS) backed by:
-- **Firebase Authentication** — email/password sign-in
-- **Firebase Firestore** — stores requests and the approver list, live-updating
-- **EmailJS** — sends the four notification emails, entirely from the browser
-- **GitHub Pages** — hosts the static site for free
+| Piece | GitHub feature |
+|---|---|
+| Website with the AI Tool Catalogue and request list | **GitHub Pages** |
+| Sign-in | **GitHub accounts** |
+| Loan requests and their history | **GitHub Issues** (one issue per request) |
+| Approve / reject / issue / return | **GitHub Actions** bot reacting to comments |
+| Email notifications | **GitHub notifications** |
+| Catalogue validation and request form generation | **Java** builder run by GitHub Actions |
 
-## 1. Create a Firebase project (5 min)
+Live site (after setup): <https://yyuetmeng.github.io/tloan-ai-tools/>
 
-1. Go to <https://console.firebase.google.com> → "Add project" → follow the prompts (Google Analytics is optional, skip it).
-2. Project settings (gear icon) → General → "Your apps" → click the `</>` (web) icon → register an app (any nickname) → **do not** tick Firebase Hosting.
-3. Copy the `firebaseConfig` object shown and paste its values into `js/firebase-config.js` in this repo.
-4. Build → Authentication → Get started → Sign-in method → enable **Email/Password**.
-5. Build → Firestore Database → Create database → start in **production mode** → pick a region.
-6. Firestore → Rules tab → paste the contents of `firestore.rules` from this repo → Publish.
+## How a loan works
 
-## 2. Set the first approver
+1. **Request** — on the website click *Request* on a tool (or *New request*). This opens a GitHub
+   issue form: pick the tool, describe the purpose, enter start and end dates (YYYY-MM-DD).
+2. The bot checks the request. If something is wrong (unknown tool, bad dates) it labels it
+   `status: needs info` and says what to fix; editing the issue re-checks it. If it's fine it labels it
+   `status: submitted` and @-mentions the approvers.
+3. **Approve** — an approver comments `/approve` (optionally with a note) or `/reject <reason>`.
+   Rejected requests are closed.
+4. **Issue** — when the licence is handed over, the approver comments `/issue`. The bot refuses if
+   every licence of that tool is already out.
+5. **Return** — when it comes back, the approver comments `/return`, and the request is closed.
 
-The app auto-creates a `settings/approvers` document the first time *anyone* signs in,
-listing that person as the sole approver. Simplest path:
+Each step comments on the issue, so the requester and approvers get GitHub notifications
+(by email too, if enabled in their GitHub notification settings). The website shows every request and
+how many licences of each tool are free.
 
-1. Deploy the site (Section 4) and have the intended approver sign up first
-   (Create account, using their real work email) — they become the initial approver automatically.
-2. To add or change approvers afterwards, open Firestore Database in the Firebase console,
-   go to `settings/approvers`, and edit the `emails` array directly (all lowercase).
+## Deploy (one-time, about 5 minutes)
 
-## 3. Set up EmailJS for notifications (10 min)
+1. Merge this code into `main`.
+2. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+3. **Actions** tab → **Build and deploy** → **Run workflow** (later pushes to `main` deploy automatically).
+4. Open <https://yyuetmeng.github.io/tloan-ai-tools/>.
 
-1. Sign up free at <https://www.emailjs.com>.
-2. Add an Email Service (e.g. connect your Gmail/Outlook) → note the **Service ID**.
-3. Create four Email Templates, matching the four stages, using these variable names in each template body:
-   | Template | Suggested name | Variables available |
-   |---|---|---|
-   | New request → approver | `template_new_request` | `to_email, tool, purpose, start_date, end_date, requester_email, request_id` |
-   | Approve/Reject decision → requester | `template_decision` | `to_email, tool, decision, comments` |
-   | Issued → requester | `template_issued` | `to_email, tool, issue_date, end_date` |
-   | Returned → requester + approver | `template_returned` | `to_email, tool, return_date` |
-4. Account → General → copy your **Public Key**.
-5. Fill the Service ID, Public Key and the four template IDs into `js/firebase-config.js` (`emailjsConfig`).
+## Everyday admin — all done by editing files on GitHub
 
-If you skip this section, the app still works — it just logs a console warning instead of sending mail.
+- **Add, change or retire a tool:** edit `catalogue/tools.json` (✏️ on GitHub) and commit.
+  Set `"active": false` to hide a tool from new requests without losing history.
+  The build validates the file, then updates the website and the request form's tool list.
+- **Change approvers:** edit `catalogue/approvers.json` — a list of GitHub usernames.
+  Approvers should watch the repository (**Watch → All activity**) so they're notified of new requests.
 
-## 4. Deploy to GitHub Pages (5 min)
+Tool fields:
 
-The code is already on GitHub. One-time setup in the repo:
-**Settings → Pages → Build and deployment → Source: GitHub Actions**.
+```jsonc
+{
+  "id": "claude-pro",                 // lowercase letters, digits, dashes; unique
+  "name": "Claude Pro",               // shown in the form; unique
+  "vendor": "Anthropic",
+  "category": "Assistant",
+  "description": "AI assistant for writing, analysis and coding.",
+  "websiteUrl": "https://claude.ai",
+  "totalLicences": 5,                 // how many can be issued at once
+  "active": true
+}
+```
 
-The included workflow (`.github/workflows/deploy.yml`) runs on every push to `main`
-(or manually from the Actions tab) and publishes the site at
-`https://<your-username>.github.io/<your-repo>/` — for this repo,
-<https://yyuetmeng.github.io/tloan-ai-tools/>.
+## Project layout
 
-The site files are `index.html`, `css/` and `js/`; only those are published.
+| Path | What it is |
+|---|---|
+| `index.html`, `css/`, `js/app.js`, `js/config.js` | The GitHub Pages website |
+| `js/loan-workflow.js` | Request rules shared by the website and the bot (tests: `js/loan-workflow.test.js`) |
+| `catalogue/tools.json`, `catalogue/approvers.json` | The catalogue and approver list |
+| `catalogue-builder/` | Java 21 program that validates the catalogue and generates `data/tools.json` and the issue form |
+| `.github/ISSUE_TEMPLATE/loan-request.yml` | The request form — **generated**, don't edit by hand |
+| `.github/scripts/loan-bot.js`, `.github/workflows/loan-requests.yml` | The approval bot |
+| `.github/workflows/deploy.yml` | Builds, tests and deploys to GitHub Pages |
 
-## 5. Test end-to-end
+## Run locally
 
-1. Open the deployed site, "Create account" as a normal requester (a different email from the approver).
-2. Submit a request — confirm the approver's inbox gets the new-request email (if EmailJS is configured).
-3. Sign in as the approver, Approve or Reject it — confirm the requester gets the decision email.
-4. Mark it Issued, then Returned — confirm each stage fires its email and the status badge updates live for the requester.
+```bash
+# Java builder (needs Java 21 + Maven)
+mvn -f catalogue-builder/pom.xml package
+java -jar catalogue-builder/target/catalogue-builder.jar \
+  catalogue/tools.json _site/data/tools.json .github/ISSUE_TEMPLATE/loan-request.yml
 
-## Notes and things to harden before production use
+# Workflow rule tests (needs Node.js)
+node --test js/loan-workflow.test.js
 
-- The current build treats **any signed-in user not in the approver list as a requester** — there's no invite-only signup; anyone with the link can create an account. Add an allow-list or your organization's SSO if that matters.
-- The AI Tool Catalogue can be managed by the Java service in [`catalogue-service/`](catalogue-service/README.md) — deploy it and set `catalogueApiUrl` in `js/firebase-config.js`. Until then the app falls back to the hard-coded `TOOL_CATALOGUE` array in `js/app.js`.
-- Firestore's free (Spark) tier comfortably covers small teams; check Firebase pricing if usage grows.
-- `firestore.rules` enforces that only the approver list can approve/issue/return, and that requesters can only see their own requests — review it against your own security requirements before going live.
+# Website: serve the repo root and open http://localhost:8000
+python3 -m http.server 8000
+```
+
+## Things to know
+
+- **The repository is public**, so loan requests (tool, dates, purpose, GitHub username) are public too.
+  GitHub Pages on a private repository needs a paid GitHub plan.
+- Anyone with a GitHub account can submit a request; only people in `approvers.json` can move it along.
+- The website reads requests through GitHub's public API without signing in, which allows
+  60 page loads per hour per visitor's network — plenty for a small team.

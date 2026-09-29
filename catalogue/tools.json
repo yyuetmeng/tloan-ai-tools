@@ -1,0 +1,42 @@
+[
+  {
+    "id": "claude-pro",
+    "name": "Claude Pro",
+    "vendor": "Anthropic",
+    "category": "Assistant",
+    "description": "AI assistant for writing, analysis and coding.",
+    "websiteUrl": "https://claude.ai",
+    "totalLicences": 5,
+    "active": true
+  },
+  {
+    "id": "lovable",
+    "name": "Lovable",
+    "vendor": "Lovable",
+    "category": "App Builder",
+    "description": "Build web apps from natural-language prompts.",
+    "websiteUrl": "https://lovable.dev",
+    "totalLicences": 3,
+    "active": true
+  },
+  {
+    "id": "figma",
+    "name": "Figma",
+    "vendor": "Figma",
+    "category": "Design",
+    "description": "Collaborative interface design with AI features.",
+    "websiteUrl": "https://www.figma.com",
+    "totalLicences": 3,
+    "active": true
+  },
+  {
+    "id": "codex-pro",
+    "name": "Codex Pro",
+    "vendor": "OpenAI",
+    "category": "Coding",
+    "description": "AI coding agent for software development tasks.",
+    "websiteUrl": "https://openai.com/codex",
+    "totalLicences": 3,
+    "active": true
+  }
+]
